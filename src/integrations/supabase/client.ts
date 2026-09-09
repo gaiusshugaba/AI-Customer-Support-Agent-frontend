@@ -1,18 +1,10 @@
-// Stub for Supabase client – replace with real implementation later
-export const supabase = {
-  auth: {
-    getSession: () => Promise.resolve({ data: { session: null }, error: null }),
-    onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-  },
-  from: () => ({
-    select: () => ({
-      eq: () => ({
-        single: () => Promise.resolve({ data: null, error: null }),
-        order: () => Promise.resolve({ data: [], error: null }),
-      }),
-    }),
-    insert: () => Promise.resolve({ data: null, error: null }),
-    update: () => Promise.resolve({ data: null, error: null }),
-    delete: () => Promise.resolve({ data: null, error: null }),
-  }),
-};
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
+}
+
+export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
