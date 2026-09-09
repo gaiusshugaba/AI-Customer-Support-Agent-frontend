@@ -63,6 +63,7 @@ export const ingestionLogQuery = () =>
 export async function ingestDocument(file: File) {
   const fd = new FormData();
   fd.append("file", file);
+    fd.append("tenant_id", TENANT_ID);
   const res = await fetch(WEBHOOKS.kbIngest, { method: "POST", body: fd });
   const raw = await res.json().catch(() => ({}));
   const data = (Array.isArray(raw) ? raw[0] : raw) ?? {};
