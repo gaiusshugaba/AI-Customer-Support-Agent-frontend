@@ -7,6 +7,19 @@
  */
 export const DEFAULT_TENANT_ID = "b2b-saas-demo";
 
+/**
+ * Preset customer used for the public portfolio demo.
+ *
+ * Seeded in Supabase with name="Demo User", plan_tier="Growth",
+ * account_status="active" so reviewers can immediately test
+ * account-context questions ("what plan am I on?") without setup.
+ *
+ * In production this would come from the authenticated user's session,
+ * not a hardcoded constant — see resolveTenantId() above for the same
+ * pattern applied to tenant.
+ */
+export const DEMO_CUSTOMER_ID = "demo-customer-0001";
+
 /** Kept for the admin operations console, which is scoped to the demo tenant. */
 export const TENANT_ID = DEFAULT_TENANT_ID;
 
