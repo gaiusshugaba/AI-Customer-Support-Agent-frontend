@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { supabase } from "@/integrations/supabase/client";
 import { TENANT_ID } from "@/lib/constants";
 import { fetchConversationSummaries } from "./conversations";
 import { fetchEscalationCases } from "./escalations";
@@ -22,19 +23,84 @@ export type OverviewMetrics = {
 
 const OPEN_STATUSES = new Set(["awaiting_customer_info", "ready_for_agent", "in_progress"]);
 
+/**
+ * Read-path signal for vector search health.
+ *
+ * Returns true if an assistant turn with a positive retrieval_score was
+ * written in the last 24h. That proves the query embedding + Pinecone
+ * round-trip is actually completing in production — not just that the
+ * Pinecone API responds to a ping.
+ *
+ * Fails closed: any query error (RLS, missing column, network) returns
+ * false, so we degrade to "unknown" rather than lie about being healthy.
+ */
+async function hasRecentRetrieval(sinceIso: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("conversation_turns")
+    .select("timestamp")
+    .eq("tenant_id", TENANT_ID)
+    .eq("role", "assistant")
+    .gt("retrieval_score", 0)
+    .gte("timestamp", sinceIso)
+    .limit(1);
+
+  if (error) return false;
+  return (data ?? []).length > 0;
+}
+
+function computeVectorHealth(
+  hasRecentWrite: boolean,
+  hasRecentRead: boolean,
+): HealthIndicator {
+  if (hasRecentWrite && hasRecentRead) {
+    return {
+      area: "Vector search",
+      state: "healthy",
+      detail: "Recent ingestion and retrieval activity observed in the last 24h",
+    };
+  }
+  if (hasRecentWrite) {
+    return {
+      area: "Vector search",
+      state: "degraded",
+      detail: "Documents ingested recently; no successful retrieval in the last 24h",
+    };
+  }
+  if (hasRecentRead) {
+    return {
+      area: "Vector search",
+      state: "degraded",
+      detail: "Retrieval active; no successful ingestion in the last 24h",
+    };
+  }
+  return {
+    area: "Vector search",
+    state: "unknown",
+    detail: "No ingestion or retrieval activity in the last 24h",
+  };
+}
+
 export async function fetchOverview(): Promise<OverviewMetrics> {
-  const [conversations, cases, documents, errors] = await Promise.all([
+  const since = Date.now() - DAY_MS;
+  const sinceIso = new Date(since).toISOString();
+
+  const [conversations, cases, documents, errors, recentRetrieval] = await Promise.all([
     fetchConversationSummaries(),
     fetchEscalationCases(),
     fetchDocuments(),
     fetchRequestErrors(200),
+    hasRecentRetrieval(sinceIso),
   ]);
 
-  const since = Date.now() - DAY_MS;
   const recentErrors = errors.filter(
     (e) => e.occurred_at && new Date(e.occurred_at).getTime() >= since,
   );
   const failedIngestions = documents.filter((d) => d.status.toLowerCase() === "failed").length;
+
+  // Write path derived from documents we already loaded — no extra query
+  const hasRecentWrite = documents.some(
+    (d) => d.last_ingested && new Date(d.last_ingested).getTime() >= since,
+  );
 
   const health: HealthIndicator[] = [
     {
@@ -62,11 +128,7 @@ export async function fetchOverview(): Promise<OverviewMetrics> {
       state: "healthy",
       detail: "Operational tables readable from this console",
     },
-    {
-      area: "Vector search",
-      state: "unknown",
-      detail: "No health signal exposed by the backend",
-    },
+    computeVectorHealth(hasRecentWrite, recentRetrieval),
   ];
 
   return {
