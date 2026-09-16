@@ -8,6 +8,7 @@ import { fetchDocuments } from "./documents";
 import { fetchRequestErrors, type HealthIndicator } from "./errors";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const INGESTION_WINDOW_MS = 7 * DAY_MS;
 
 export type OverviewMetrics = {
   activeConversations: number;
@@ -56,33 +57,34 @@ function computeVectorHealth(
     return {
       area: "Vector search",
       state: "healthy",
-      detail: "Recent ingestion and retrieval activity observed in the last 24h",
+      detail: "Ingestion within 7d and retrieval within 24h",
     };
   }
   if (hasRecentWrite) {
     return {
       area: "Vector search",
       state: "degraded",
-      detail: "Documents ingested recently; no successful retrieval in the last 24h",
+      detail: "Documents ingested in the last 7d; no successful retrieval in the last 24h",
     };
   }
   if (hasRecentRead) {
     return {
       area: "Vector search",
       state: "degraded",
-      detail: "Retrieval active; no successful ingestion in the last 24h",
+      detail: "Retrieval active; no ingestion in the last 7d",
     };
   }
   return {
     area: "Vector search",
     state: "unknown",
-    detail: "No ingestion or retrieval activity in the last 24h",
+    detail: "No ingestion or retrieval activity in the last 7d",
   };
 }
 
 export async function fetchOverview(): Promise<OverviewMetrics> {
   const since = Date.now() - DAY_MS;
   const sinceIso = new Date(since).toISOString();
+  const ingestionSince = Date.now() - INGESTION_WINDOW_MS;
 
   const [conversations, cases, documents, errors, recentRetrieval] = await Promise.all([
     fetchConversationSummaries(),
@@ -99,7 +101,7 @@ export async function fetchOverview(): Promise<OverviewMetrics> {
 
   // Write path derived from documents we already loaded — no extra query
   const hasRecentWrite = documents.some(
-    (d) => d.last_ingested && new Date(d.last_ingested).getTime() >= since,
+    (d) => d.last_ingested && new Date(d.last_ingested).getTime() >= ingestionSince,
   );
 
   const health: HealthIndicator[] = [
